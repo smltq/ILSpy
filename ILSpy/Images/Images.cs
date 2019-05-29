@@ -95,6 +95,7 @@ namespace ICSharpCode.ILSpy
 		private static readonly BitmapImage OverlayInternal = LoadBitmap("OverlayInternal");
 		private static readonly BitmapImage OverlayProtectedInternal = LoadBitmap("OverlayProtectedInternal");
 		private static readonly BitmapImage OverlayPrivate = LoadBitmap("OverlayPrivate");
+		private static readonly BitmapImage OverlayPrivateProtected = LoadBitmap("OverlayPrivateProtected");
 		private static readonly BitmapImage OverlayCompilerControlled = LoadBitmap("OverlayCompilerControlled");
 
 		private static readonly BitmapImage OverlayStatic = LoadBitmap("OverlayStatic");
@@ -167,7 +168,7 @@ namespace ICSharpCode.ILSpy
 						baseImage = Images.StaticClass;
 						break;
 					default:
-						throw new NotSupportedException();
+						throw new ArgumentOutOfRangeException(nameof(icon), $"TypeIcon.{icon} is not supported!");
 				}
 
 				return baseImage;
@@ -237,7 +238,7 @@ namespace ICSharpCode.ILSpy
 						baseImage = Images.Event;
 						break;
 					default:
-						throw new NotSupportedException();
+						throw new ArgumentOutOfRangeException(nameof(icon), $"MemberIcon.{icon} is not supported!");
 				}
 
 				return baseImage;
@@ -295,11 +296,14 @@ namespace ICSharpCode.ILSpy
 					case AccessOverlayIcon.Private:
 						overlayImage = Images.OverlayPrivate;
 						break;
+					case AccessOverlayIcon.PrivateProtected:
+						overlayImage = Images.OverlayPrivateProtected;
+						break;
 					case AccessOverlayIcon.CompilerControlled:
 						overlayImage = Images.OverlayCompilerControlled;
 						break;
 					default:
-						throw new NotSupportedException();
+						throw new ArgumentOutOfRangeException(nameof(overlay), $"AccessOverlayIcon.{overlay} is not supported!");
 				}
 				return overlayImage;
 			}

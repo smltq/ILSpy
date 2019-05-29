@@ -18,7 +18,6 @@
 
 using System;
 using System.Threading;
-using ICSharpCode.Decompiler;
 using ICSharpCode.ILSpy.Options;
 
 namespace ICSharpCode.ILSpy
@@ -51,7 +50,7 @@ namespace ICSharpCode.ILSpy
 		/// <summary>
 		/// Gets the settings for the decompiler.
 		/// </summary>
-		public DecompilerSettings DecompilerSettings { get; set; }
+		public Decompiler.DecompilerSettings DecompilerSettings { get; private set; }
 
 		/// <summary>
 		/// Gets/sets an optional state of a decompiler text view.
@@ -61,9 +60,43 @@ namespace ICSharpCode.ILSpy
 		/// </remarks>
 		public TextView.DecompilerTextViewState TextViewState { get; set; }
 
+		/// <summary>
+		/// Used internally for debugging.
+		/// </summary>
+		internal int StepLimit = int.MaxValue;
+		internal bool IsDebug = false;
+
 		public DecompilationOptions()
+			: this(MainWindow.Instance.CurrentLanguageVersion, DecompilerSettingsPanel.CurrentDecompilerSettings, DisplaySettingsPanel.CurrentDisplaySettings)
 		{
-			this.DecompilerSettings = DecompilerSettingsPanel.CurrentDecompilerSettings;
+		}
+
+		public DecompilationOptions(LanguageVersion version)
+			: this(version, DecompilerSettingsPanel.CurrentDecompilerSettings, DisplaySettingsPanel.CurrentDisplaySettings)
+		{
+		}
+
+		public DecompilationOptions(LanguageVersion version, Decompiler.DecompilerSettings settings, Options.DisplaySettings displaySettings)
+		{
+			if (!Enum.TryParse(version.Version, out Decompiler.CSharp.LanguageVersion languageVersion)) 
+				languageVersion = Decompiler.CSharp.LanguageVersion.Latest;
+			var newSettings = this.DecompilerSettings = settings.Clone();
+			newSettings.SetLanguageVersion(languageVersion);
+			newSettings.ExpandMemberDefinitions = displaySettings.ExpandMemberDefinitions;
+			newSettings.ExpandUsingDeclarations = displaySettings.ExpandUsingDeclarations;
+			newSettings.FoldBraces = displaySettings.FoldBraces;
+			newSettings.ShowDebugInfo = displaySettings.ShowDebugInfo;
+			newSettings.CSharpFormattingOptions.IndentationString = GetIndentationString(displaySettings);
+		}
+
+		private string GetIndentationString(DisplaySettings displaySettings)
+		{
+			if (displaySettings.IndentationUseTabs) {
+				int numberOfTabs = displaySettings.IndentationSize / displaySettings.IndentationTabSize;
+				int numberOfSpaces = displaySettings.IndentationSize % displaySettings.IndentationTabSize;
+				return new string('\t', numberOfTabs) + new string(' ', numberOfSpaces);
+			}
+			return new string(' ', displaySettings.IndentationSize);
 		}
 	}
 }

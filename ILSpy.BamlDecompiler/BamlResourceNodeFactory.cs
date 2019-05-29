@@ -2,22 +2,19 @@
 // This code is distributed under the MS-PL (for details please see \doc\MS-PL.txt)
 
 using System;
-using System.Collections.Generic;
 using System.ComponentModel.Composition;
 using System.IO;
 
 using ICSharpCode.ILSpy.TreeNodes;
 using ICSharpCode.ILSpy;
-using System.Resources;
-using System.Collections;
-using System.Linq;
+using ICSharpCode.Decompiler.Metadata;
 
 namespace ILSpy.BamlDecompiler
 {
 	[Export(typeof(IResourceNodeFactory))]
 	public sealed class BamlResourceNodeFactory : IResourceNodeFactory
 	{
-		public ILSpyTreeNode CreateNode(Mono.Cecil.Resource resource)
+		public ILSpyTreeNode CreateNode(Resource resource)
 		{
 			return null;
 		}
@@ -39,7 +36,7 @@ namespace ILSpy.BamlDecompiler
 
 		public string WriteResourceToFile(LoadedAssembly assembly, string fileName, Stream stream, DecompilationOptions options)
 		{
-			var document = BamlResourceEntryNode.LoadIntoDocument(assembly.GetAssemblyResolver(), assembly.AssemblyDefinition, stream);
+			var document = BamlResourceEntryNode.LoadIntoDocument(assembly.GetPEFileOrNull(), assembly.GetAssemblyResolver(), stream, options.CancellationToken);
 			fileName = Path.ChangeExtension(fileName, ".xaml");
 			document.Save(Path.Combine(options.SaveAsProjectDirectory, fileName));
 			return fileName;

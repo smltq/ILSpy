@@ -18,7 +18,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.Composition.Hosting;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -30,6 +29,10 @@ using System.Windows.Navigation;
 using System.Windows.Threading;
 
 using ICSharpCode.ILSpy.TextView;
+using ICSharpCode.ILSpy.Options;
+
+using Microsoft.VisualStudio.Composition;
+using System.Text;
 
 namespace ICSharpCode.ILSpy
 {
@@ -38,15 +41,18 @@ namespace ICSharpCode.ILSpy
 	/// </summary>
 	public partial class App : Application
 	{
-		static CompositionContainer compositionContainer;
-		
-		public static CompositionContainer CompositionContainer {
-			get { return compositionContainer; }
-		}
 		
 		internal static CommandLineArguments CommandLineArguments;
+
+		static ExportProvider exportProvider;
 		
-		internal static IList<ExceptionData> StartupExceptions = new List<ExceptionData>();
+		public static ExportProvider ExportProvider => exportProvider;
+
+		static IExportProviderFactory exportProviderFactory;
+		
+		public static IExportProviderFactory ExportProviderFactory => exportProviderFactory;
+		
+		internal static readonly IList<ExceptionData> StartupExceptions = new List<ExceptionData>();
 		
 		internal class ExceptionData
 		{
@@ -58,7 +64,7 @@ namespace ICSharpCode.ILSpy
 		{
 			var cmdArgs = Environment.GetCommandLineArgs().Skip(1);
 			App.CommandLineArguments = new CommandLineArguments(cmdArgs);
-			if (App.CommandLineArguments.SingleInstance ?? true) {
+			if ((App.CommandLineArguments.SingleInstance ?? true) && !MiscSettingsPanel.CurrentMiscSettings.AllowMultipleInstances) {
 				cmdArgs = cmdArgs.Select(FullyQualifyPath);
 				string message = string.Join(Environment.NewLine, cmdArgs);
 				if (SendToPreviousInstance("ILSpy:\r\n" + message, !App.CommandLineArguments.NoActivate)) {
@@ -66,41 +72,70 @@ namespace ICSharpCode.ILSpy
 				}
 			}
 			InitializeComponent();
-			
-			var catalog = new AggregateCatalog();
-			catalog.Catalogs.Add(new AssemblyCatalog(typeof(App).Assembly));
-			// Don't use DirectoryCatalog, that causes problems if the plugins are from the Internet zone
-			// see http://stackoverflow.com/questions/8063841/mef-loading-plugins-from-a-network-shared-folder
-			string appPath = Path.GetDirectoryName(typeof(App).Module.FullyQualifiedName);
-			foreach (string plugin in Directory.GetFiles(appPath, "*.Plugin.dll")) {
-				string shortName = Path.GetFileNameWithoutExtension(plugin);
-				try {
-					var asm = Assembly.Load(shortName);
-					asm.GetTypes();
-					catalog.Catalogs.Add(new AssemblyCatalog(asm));
-				} catch (Exception ex) {
-					// Cannot show MessageBox here, because WPF would crash with a XamlParseException
-					// Remember and show exceptions in text output, once MainWindow is properly initialized
-					StartupExceptions.Add(new ExceptionData { Exception = ex, PluginName = shortName });
-				}
-			}
-			
-			compositionContainer = new CompositionContainer(catalog);
-			
-			Languages.Initialize(compositionContainer);
-			
+
 			if (!System.Diagnostics.Debugger.IsAttached) {
 				AppDomain.CurrentDomain.UnhandledException += ShowErrorBox;
 				Dispatcher.CurrentDispatcher.UnhandledException += Dispatcher_UnhandledException;
 			}
 			TaskScheduler.UnobservedTaskException += DotNet40_UnobservedTaskException;
+
+			// Cannot show MessageBox here, because WPF would crash with a XamlParseException
+			// Remember and show exceptions in text output, once MainWindow is properly initialized
+			try {
+				// Set up VS MEF. For now, only do MEF1 part discovery, since that was in use before.
+				// To support both MEF1 and MEF2 parts, just change this to:
+				// var discovery = PartDiscovery.Combine(new AttributedPartDiscoveryV1(Resolver.DefaultInstance),
+				//                                       new AttributedPartDiscovery(Resolver.DefaultInstance));
+				var discovery = new AttributedPartDiscoveryV1(Resolver.DefaultInstance);
+				var catalog = ComposableCatalog.Create(Resolver.DefaultInstance);
+				var pluginDir = Path.GetDirectoryName(typeof(App).Module.FullyQualifiedName);
+				if (pluginDir != null) {
+					foreach (var plugin in Directory.GetFiles(pluginDir, "*.Plugin.dll")) {
+						var name = Path.GetFileNameWithoutExtension(plugin);
+						try {
+							var asm = Assembly.Load(name);
+							var parts = discovery.CreatePartsAsync(asm).Result;
+							catalog = catalog.AddParts(parts);
+						} catch (Exception ex) {
+							StartupExceptions.Add(new ExceptionData { Exception = ex, PluginName = name });
+						}
+					}
+				}
+				// Add the built-in parts
+				catalog = catalog.AddParts(discovery.CreatePartsAsync(Assembly.GetExecutingAssembly()).Result);
+				// If/When the project switches to .NET Standard/Core, this will be needed to allow metadata interfaces (as opposed
+				// to metadata classes). When running on .NET Framework, it's automatic.
+				//   catalog.WithDesktopSupport();
+				// If/When any part needs to import ICompositionService, this will be needed:
+				//   catalog.WithCompositionService();
+				var config = CompositionConfiguration.Create(catalog);
+				exportProviderFactory = config.CreateExportProviderFactory();
+				exportProvider = exportProviderFactory.CreateExportProvider();
+				// This throws exceptions for composition failures. Alternatively, the configuration's CompositionErrors property
+				// could be used to log the errors directly. Used at the end so that it does not prevent the export provider setup.
+				config.ThrowOnErrors();
+			} catch (Exception ex) {
+				StartupExceptions.Add(new ExceptionData { Exception = ex });
+			}
 			
+			Languages.Initialize(exportProvider);
+
 			EventManager.RegisterClassHandler(typeof(Window),
 			                                  Hyperlink.RequestNavigateEvent,
 			                                  new RequestNavigateEventHandler(Window_RequestNavigate));
-			
+			ILSpyTraceListener.Install();
 		}
-		
+
+		protected override void OnStartup(StartupEventArgs e)
+		{
+			var output = new StringBuilder();
+			if (ILSpy.MainWindow.FormatExceptions(StartupExceptions.ToArray(), output)) {
+				MessageBox.Show(output.ToString(), "Sorry we crashed!");
+				Environment.Exit(1);
+			}
+			base.OnStartup(e);
+		}
+
 		string FullyQualifyPath(string argument)
 		{
 			// Fully qualify the paths before passing them to another process,
@@ -123,8 +158,7 @@ namespace ICSharpCode.ILSpy
 		#region Exception Handling
 		static void Dispatcher_UnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
 		{
-			Debug.WriteLine(e.Exception.ToString());
-			MessageBox.Show(e.Exception.ToString(), "Sorry, we crashed");
+			UnhandledException(e.Exception);
 			e.Handled = true;
 		}
 		
@@ -132,12 +166,25 @@ namespace ICSharpCode.ILSpy
 		{
 			Exception ex = e.ExceptionObject as Exception;
 			if (ex != null) {
-				Debug.WriteLine(ex.ToString());
-				MessageBox.Show(ex.ToString(), "Sorry, we crashed");
+				UnhandledException(ex);
 			}
 		}
+
+		static void UnhandledException(Exception exception)
+		{
+			Debug.WriteLine(exception.ToString());
+			for (Exception ex = exception; ex != null; ex = ex.InnerException) {
+				ReflectionTypeLoadException rtle = ex as ReflectionTypeLoadException;
+				if (rtle != null && rtle.LoaderExceptions.Length > 0) {
+					exception = rtle.LoaderExceptions[0];
+					Debug.WriteLine(exception.ToString());
+					break;
+				}
+			}
+			MessageBox.Show(exception.ToString(), "Sorry, we crashed");
+		}
 		#endregion
-		
+
 		#region Pass Command Line Arguments to previous instance
 		bool SendToPreviousInstance(string message, bool activate)
 		{
@@ -198,6 +245,7 @@ namespace ICSharpCode.ILSpy
 					}
 				}
 				ILSpy.MainWindow.Instance.TextView.ShowText(output);
+				e.Handled = true;
 			}
 		}
 	}

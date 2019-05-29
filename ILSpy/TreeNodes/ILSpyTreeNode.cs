@@ -16,7 +16,6 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-using System;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
@@ -56,12 +55,6 @@ namespace ICSharpCode.ILSpy.TreeNodes
 				return FilterResult.Match;
 			else
 				return FilterResult.Hidden;
-		}
-
-		protected static object HighlightSearchMatch(string text, string suffix = null)
-		{
-			// TODO: implement highlighting the search match
-			return text + suffix;
 		}
 
 		public abstract void Decompile(Language language, ITextOutput output, DecompilationOptions options);
@@ -151,13 +144,13 @@ namespace ICSharpCode.ILSpy.TreeNodes
 			}
 		}
 
-		protected override void OnIsVisibleChanged()
+		/*protected override void OnIsVisibleChanged()
 		{
 			base.OnIsVisibleChanged();
 			EnsureChildrenFiltered();
-		}
+		}*/
 
-		void EnsureChildrenFiltered()
+		internal void EnsureChildrenFiltered()
 		{
 			EnsureLazyChildren();
 			if (childrenNeedFiltering) {

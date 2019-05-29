@@ -2,16 +2,12 @@
 // This code is distributed under the GNU LGPL (for details please see \doc\license.txt)
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Windows.Controls;
 using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
-using System.Windows.Input;
 using System.ComponentModel;
-using System.Collections.Specialized;
+using System.Diagnostics;
 
 namespace ICSharpCode.TreeView
 {
@@ -98,7 +94,7 @@ namespace ICSharpCode.TreeView
 				if (ParentTreeView.ShowLines) {
 					foreach (var child in Node.VisibleDescendantsAndSelf()) {
 						var container = ParentTreeView.ItemContainerGenerator.ContainerFromItem(child) as SharpTreeViewItem;
-						if (container != null) {
+						if (container != null && container.NodeView != null) {
 							container.NodeView.LinesRenderer.InvalidateVisual();
 						}
 					}
@@ -150,8 +146,10 @@ namespace ICSharpCode.TreeView
 			else {
 				result -= 19;
 			}
-			if (result < 0)
-				throw new InvalidOperationException();
+			if (result < 0) {
+				Debug.WriteLine("SharpTreeNodeView.CalculateIndent() on node without correctly-set level");
+				return 0;
+			}
 			return result;
 		}
 	}

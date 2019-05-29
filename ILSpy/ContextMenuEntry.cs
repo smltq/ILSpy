@@ -19,7 +19,6 @@
 using System;
 using System.ComponentModel.Composition;
 using System.Linq;
-using System.Windows;
 using System.Windows.Controls;
 
 using ICSharpCode.AvalonEdit;
@@ -78,8 +77,8 @@ namespace ICSharpCode.ILSpy
 			ReferenceSegment reference;
 			if (textView != null)
 				reference = textView.GetReferenceSegmentAtMousePosition();
-			else if (listBox != null)
-				reference = new ReferenceSegment { Reference = ((SearchResult)listBox.SelectedItem).Member };
+			else if (listBox?.SelectedItem is SearchResult result)
+				reference = new ReferenceSegment { Reference = result.Member };
 			else
 				reference = null;
 			var position = textView != null ? textView.GetPositionFromMousePosition() : null;
@@ -99,7 +98,8 @@ namespace ICSharpCode.ILSpy
 		string Icon { get; }
 		string Header { get; }
 		string Category { get; }
-		
+		string InputGestureText { get; }
+
 		double Order { get; }
 	}
 	
@@ -117,6 +117,7 @@ namespace ICSharpCode.ILSpy
 		public string Icon { get; set; }
 		public string Header { get; set; }
 		public string Category { get; set; }
+		public string InputGestureText { get; set; }
 		public double Order { get; set; }
 	}
 	
@@ -150,21 +151,22 @@ namespace ICSharpCode.ILSpy
 		readonly SharpTreeView treeView;
 		readonly DecompilerTextView textView;
 		readonly ListBox listBox;
+		readonly Lazy<IContextMenuEntry, IContextMenuEntryMetadata>[] entries;
 		
-		[ImportMany(typeof(IContextMenuEntry))]
-		Lazy<IContextMenuEntry, IContextMenuEntryMetadata>[] entries = null;
+		private ContextMenuProvider()
+		{
+			entries = App.ExportProvider.GetExports<IContextMenuEntry, IContextMenuEntryMetadata>().ToArray();
+		}
 		
-		ContextMenuProvider(SharpTreeView treeView, DecompilerTextView textView = null)
+		ContextMenuProvider(SharpTreeView treeView, DecompilerTextView textView = null) : this()
 		{
 			this.treeView = treeView;
 			this.textView = textView;
-			App.CompositionContainer.ComposeParts(this);
 		}
 		
-		ContextMenuProvider(ListBox listBox)
+		ContextMenuProvider(ListBox listBox) : this()
 		{
 			this.listBox = listBox;
-			App.CompositionContainer.ComposeParts(this);
 		}
 		
 		void treeView_ContextMenuOpening(object sender, ContextMenuEventArgs e)
@@ -217,7 +219,8 @@ namespace ICSharpCode.ILSpy
 							needSeparatorForCategory = false;
 						}
 						MenuItem menuItem = new MenuItem();
-						menuItem.Header = entryPair.Metadata.Header;
+						menuItem.Header = MainWindow.GetResourceString( entryPair.Metadata.Header);
+						menuItem.InputGestureText = entryPair.Metadata.InputGestureText;
 						if (!string.IsNullOrEmpty(entryPair.Metadata.Icon)) {
 							menuItem.Icon = new Image {
 								Width = 16,
